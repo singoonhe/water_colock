@@ -16,9 +16,9 @@ class CONFIG:
         except OSError:  # open failed
             self.save_one('boot_web', 0)
             
-    # 获取配置信息
-    def read_one(self, key):
-        return self.config_dic.get(key)
+    # 获取配置信息, 添加默认值
+    def read_one(self, key, default):
+        return self.config_dic.get(key, default)
 
     # 保存部分配置
     def save_one(self, key, value):
