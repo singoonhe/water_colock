@@ -1,5 +1,6 @@
 using Android.BLE;
 using Android.BLE.Commands;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -36,14 +37,17 @@ public class ConfigMain : MonoBehaviour
     public Transform configPanelNode;
     public Transform selectNode;
     public Text deviceNameText;
+    public Text scanStatusText;
+    public Coroutine scanCoroutine;
     public Text connectText;
     public GameObject configCell;
 
     void Start()
     {
         devicePanelNode.gameObject.SetActive(false);
+        scanStatusText.gameObject.SetActive(false);
         // 默认10秒超时
-        discoverCommand = new DiscoverDevices(OnDeviceFound);
+        discoverCommand = new DiscoverDevices(OnDeviceFound, OnDeviceScanFinish);
         if (!Permission.HasUserAuthorizedPermission(blePermissions[0]))
         {
             var callbacks = new PermissionCallbacks();
@@ -78,13 +82,19 @@ public class ConfigMain : MonoBehaviour
     {
         if ((++grantedCount) >= blePermissions.Length)
         {
-            ScanDevice();
+            OnScanDevice();
         }
     }
 
     // 开始扫描事件
-    private void ScanDevice()
+    public void OnScanDevice()
     {
+        if (scanCoroutine != null)
+        {
+            AndroidToast.ToastStringShow("正在扫描中");
+            return;
+        }
+
         if (grantedCount >= blePermissions.Length)
         {
             BleManager.Instance.QueueCommand(discoverCommand);
@@ -95,7 +105,39 @@ public class ConfigMain : MonoBehaviour
             AndroidToast.ToastStringShow("请先授权");
         }
         isConnected = false;
+        bleUUID = null;
         devicePanelNode.gameObject.SetActive(false);
+        // 开始显示状态
+        scanStatusText.gameObject.SetActive(true);
+        scanCoroutine = StartCoroutine(ScanStatusEnumerator());
+    }
+
+    // 扫描中状态动态显示
+    IEnumerator ScanStatusEnumerator()
+    {
+        string minText = "扫描中";
+        int statusMinLen = minText.Length;
+        scanStatusText.text = minText;
+        while (true)
+        {
+            yield return new WaitForSeconds(1);
+            scanStatusText.text += ".";
+            if (scanStatusText.text.Length > (statusMinLen + 3))
+            {
+                scanStatusText.text = minText;
+            }
+        }
+    }
+
+    // 停止扫描状态的显示
+    private void StopScanStatus()
+    {
+        if (scanCoroutine != null)
+        {
+            StopCoroutine(scanCoroutine);
+            scanCoroutine = null;
+        }
+        scanStatusText.gameObject.SetActive(false);
     }
 
     // 设备发现回调。name是uuid, device是名称(???)
@@ -104,6 +146,8 @@ public class ConfigMain : MonoBehaviour
         if (!string.IsNullOrEmpty(device) && device.StartsWith(bleKey))
         {
             bleUUID = name;
+            // 停止扫描状态显示
+            StopScanStatus();
             // 已找到对应的设备，停止扫描
             discoverCommand.EndOnTimeout();
             Debug.Log($"找到设备name:{name}, device:{device}");
@@ -114,6 +158,14 @@ public class ConfigMain : MonoBehaviour
             // 自动连接设备
             ConnectDevice();
         }
+    }
+
+    // 设备扫描完成
+    private void OnDeviceScanFinish()
+    {
+        StopScanStatus();
+        if (string.IsNullOrEmpty(bleUUID))
+            AndroidToast.ToastStringShow("扫描完成，未找到设备");
     }
 
     // 开始连接设备
@@ -146,20 +198,28 @@ public class ConfigMain : MonoBehaviour
         // 注册回调方法
         var subscribeFromCharacteristic = new SubscribeToCharacteristic(bleUUID, serviceUUID, serviceSubscUUID, (byte[] value) =>
         {
-            Debug.Log("subscribeFromCharacteristic:" + Encoding.UTF8.GetString(value));
-            writeCharacteristic.End();
+            if (writeCharacteristic != null)
+            {
+                writeCharacteristic.End();
+                writeCharacteristic = null;
+            }
             // 获取到的数据进行处理
+            var retValue = Encoding.UTF8.GetString(value);
+            Debug.Log("get msg:" + retValue);
+            var configDic = JsonUtility.FromJson<Dictionary<string, string>>(retValue);
+            Debug.Log(configDic);
         });
         BleManager.Instance.QueueCommand(subscribeFromCharacteristic);
 
         // 发送更新数据命令
-        SendData(JsonUtility.ToJson(new Dictionary<string, string>() { { "Cmd", "Get" }}));
+        //SendData(JsonUtility.ToJson(new Dictionary<string, string>() { { "Cmd", "Get" }}));
     }
 
     // 发送数据
     private void SendData(string data)
     {
-        writeCharacteristic = new WriteToCharacteristic(bleUUID, serviceUUID, serviceWriteUUID, data);
+        string base64String = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(data));
+        writeCharacteristic = new WriteToCharacteristic(bleUUID, serviceUUID, serviceWriteUUID, base64String);
         BleManager.Instance.QueueCommand(writeCharacteristic);
     }
 

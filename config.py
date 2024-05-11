@@ -7,18 +7,20 @@ class CONFIG:
         self.config_file = config_name
         # 如文件存在，则读取该配置
         self.config_dic = {}
+        # 文件内容
+        self.config_str = "{}"
         # 读取配置文件
         try:
             file = open(self.config_file, 'r')
-            content = file.read()
-            self.config_dic = json.loads(content)
+            self.config_str = file.read()
+            self.config_dic = json.loads(self.config_str)
             file.close()
         except OSError:  # open failed
             self.save_one('boot_web', 0)
             
-    # 获取配置信息, 添加默认值
-    def read_one(self, key, default):
-        return self.config_dic.get(key, default)
+    # 获取配置信息
+    def read_one(self, key):
+        return self.config_dic.get(key)
 
     # 保存部分配置
     def save_one(self, key, value):
@@ -28,6 +30,10 @@ class CONFIG:
     # 获取配置信息
     def read(self):
         return self.config_dic
+    
+    # 获取配置的json数据
+    def read_str(self):
+        return self.config_str
             
     # 保存部分配置
     def save(self, params):
@@ -36,8 +42,9 @@ class CONFIG:
         self.config_dic.update(params)
         # 保存到文件
         try:
+            self.config_str = json.dumps(self.config_dic)
             file = open(self.config_file, 'w')
-            file.write(json.dumps(self.config_dic))
+            file.write(self.config_str)
             file.close()
         except OSError:  # open failed
             print("Save config failed!")

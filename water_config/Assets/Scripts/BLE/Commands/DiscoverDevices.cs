@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Android.BLE.Commands
 {
@@ -16,6 +16,11 @@ namespace Android.BLE.Commands
         /// The .NET event that indicates that a new BLE device is discovered.
         /// </summary>
         public readonly DeviceDiscovered OnDeviceDiscovered;
+
+        /// <summary>
+        /// 扫描完成回调方法
+        /// </summary>
+        public Action OnDeviceDiscoveredFinish;
 
         /// <summary>
         /// The time that this command will search BLE devices for.
@@ -37,9 +42,10 @@ namespace Android.BLE.Commands
         /// </summary>
         /// <param name="onDeviceDiscovered">The <see cref="DeviceDiscovered"/> that will trigger if a device is discovered.</param>
         /// <param name="discoverTime">The amount of searching time in milliseconds that. Defaults to <see cref="StandardDiscoverTime"/>.</param>
-        public DiscoverDevices(Action<string, string> onDeviceDiscovered, int discoverTime = StandardDiscoverTime) : base(true, false)
+        public DiscoverDevices(Action<string, string> onDeviceDiscovered, Action onDeviceDiscoveredFinish, int discoverTime = StandardDiscoverTime) : base(true, false)
         {
             OnDeviceDiscovered += new DeviceDiscovered(onDeviceDiscovered);
+            OnDeviceDiscoveredFinish += onDeviceDiscoveredFinish;
             _discoverTime = discoverTime;
         }
 
@@ -52,7 +58,10 @@ namespace Android.BLE.Commands
             if (string.Equals(obj.Command, "DiscoveredDevice"))
                 OnDeviceDiscovered?.Invoke(obj.Device, obj.Name);
 
-            return string.Equals(obj.Command, "FinishedDiscovering");
+            var isFinish = string.Equals(obj.Command, "FinishedDiscovering");
+            if (isFinish)
+                OnDeviceDiscoveredFinish?.Invoke();
+            return isFinish;
         }
 
         /// <summary>

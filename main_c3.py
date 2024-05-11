@@ -1,62 +1,42 @@
 # ESP32-C3独立控制小车
+import time
+import json
+import machine
 from config import CONFIG
-from screen import SCREEN
-from machine import Pin
-from time import sleep
-
-# 温度更新倒计时
-MEASURE_DTIME = const(60)
-DRINK_DTIME = const(60)
-NOTICE_DTIME = const(60)
+from config_ble import CONFIG_BLE
 
 class MAIN:
     # 初始化方法
     def __init__(self):
         # 读取配置文件
         self.config = CONFIG()
-        self.measure_mtime = self.config.read_one('measure_time', MEASURE_DTIME)
-        self.drink_mtime = self.config.read_one('drink_time', DRINK_DTIME)
-        self.notice_mtime = self.config.read_one('notice_time', NOTICE_DTIME)
-        # 人体
-        self.scr = Pin(7)
-        # 加载屏幕显示(屏幕、温度、电量)
-        self.screen = SCREEN(2, 3, 10, 0)
-        self.screen.update_measure()
-        self.show_drink = False
-        self.screen.refesh_screen(self.show_drink)
-        # 倒计时控制
-        self.measure_down_time = self.measure_mtime
-        self.drink_down_time = self.drink_mtime
-        self.notice_down_time = 0
+        # 初始化ble设置并开始广播
+        self.ble = CONFIG_BLE('epy-water-4012', self.on_ble_connected, self.on_ble_msg)
+    
+    # 蓝牙消息回调
+    def on_ble_msg(self, msg):
+        print(msg)
+        msg_dic = json.loads(msg.decode('utf-8'))
+        if msg_dic.Cmd == 'Set':
+            # 配置重置事件，保存到本地
+            del msg_dic['Cmd']
+            self.config.save(msg_dic)
+        elif msg_dic.Cmd == 'Rebot':
+            # 重启方法
+            machine.reset()
+    
+    # 蓝牙连接回调事件
+    def on_ble_connected(self):
+        # 获取配置事件，回传当前的配置项
+        self.ble.send(self.config.read_str().encode('utf-8'))
         
     # 主循环方法
     def run(self):
         try:
             while True:
-                sleep(1)
-                # 判断温湿度更新
-                self.measure_down_time -= 1
-                if self.measure_down_time <= 0:
-                    self.measure_down_time = self.measure_mtime
-                    print('update measure')
-                    self.screen.update_measure()
-                    self.screen.refesh_screen(self.show_drink)
-                # 提醒
-                if self.notice_down_time > 0:
-                    self.notice_down_time -= 1
-                    if self.notice_down_time == 0:
-                        self.show_drink = False
-                    else:
-                        self.show_drink = not self.show_drink
-                    self.screen.refesh_screen(self.show_drink)
-                # 判断喝水提醒更新
-                self.drink_down_time -= 1
-                if self.drink_down_time <= 0:
-                    self.drink_down_time = self.drink_mtime
-                    print('start notice')
-                    self.notice_down_time = self.notice_mtime
+                time.sleep_ms(100)
         except KeyboardInterrupt:
-            print('exit from interrupt')
+            print("Program stopped.")
 
 if __name__ == '__main__':
     cur_main = MAIN()

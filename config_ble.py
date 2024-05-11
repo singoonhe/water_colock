@@ -1,6 +1,7 @@
 # BLE通信模块
 import bluetooth
 import time
+import struct
 from micropython import const
 
 # BLE事件定义
@@ -28,16 +29,28 @@ _UART_SERVICE = (
 )
 
 class CONFIG_BLE:
-    def __init__(self, name, config_back):
+    def __init__(self, name, connect_call, write_call):
         self._connection = None
-        self._write_callback = config_back
+        self._connect_callback = connect_call
+        self._write_callback = write_call
         # 初始化BLE
         self._ble = bluetooth.BLE()
         self._ble.active(True)
         self._ble.irq(self._irq)
         ((self._handle_tx, self._handle_rx),) = self._ble.gatts_register_services((_UART_SERVICE,))
         # 开始广播
+        self._advertise_data = self.advertising_content(name)
         self._advertise()
+    
+    # 获取蓝牙广播内容
+    def advertising_content(self, name):
+        payload = bytearray()
+        # 添加固定数据头:struct.pack("BB", len(0x02+0x04) + 1, 0x01) + (0x02+0x04)
+        # 详情参考:https://github.com/micropython/micropython/blob/master/examples/bluetooth/ble_advertising.py
+        payload += b'\x02\x01\x06'
+        # 添加蓝牙名称，格式参考数据头
+        payload += struct.pack("BB", len(name) + 1, 0x09) + name
+        return payload
     
     # BLE回调事件
     def _irq(self, event, data):
@@ -45,6 +58,9 @@ class CONFIG_BLE:
             # 开始连接
             self._connection, _, _ = data
             print("BLE New connection", self._connection)
+            # 连接回调事件
+            if self._connect_callback:
+                self._connect_callback()
         elif event == _IRQ_CENTRAL_DISCONNECT:
             # 结束连接
             print("BLE Disconnected", self._connection)
@@ -70,7 +86,7 @@ class CONFIG_BLE:
     # 开始蓝牙广播事件
     def _advertise(self, interval_us=500000):
         print("BLE Starting advertising")
-        self._ble.gap_advertise(interval_us, adv_data=b'esp-ble')
+        self._ble.gap_advertise(interval_us, adv_data=self._advertise_data)
 
 # 测试用例
 if __name__ == "__main__":
